@@ -98,6 +98,7 @@
   .panel h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.18em;color:var(--brass);font-weight:normal;margin-bottom:10px}
   .status{font-size:1.05rem;min-height:1.5em}
   .status.big{font-size:1.2rem;color:var(--brass)}
+  .status.yourturn{color:var(--good);font-weight:bold;font-size:1.15rem}
   .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   button.act{
     font-family:inherit;font-size:.9rem;color:var(--ink);
@@ -596,6 +597,7 @@ function renderPlay(){
   paintBoard(playCells,st,{flip:game.flip,selected:game.selected,targets,lastMove:game.lastMove,checkedSq});
   const status=gameStatus(st);
   playStatus.classList.toggle('big',status!=='playing');
+  if(status!=='playing')playStatus.classList.remove('yourturn');
   if(status==='checkmate'){
     const winner=st.turn==='w'?'b':'w';
     if(online)playStatus.textContent=winner===online.myColor?'Checkmate — you win!':'Checkmate — your friend wins this one.';
@@ -608,12 +610,18 @@ function renderPlay(){
     game.over=true;
   }else{
     const side=st.turn==='w'?'White':'Black';
-    let who;
-    if(online)who=side+(st.turn===online.myColor?' (you)':' (your friend)');
-    else who=botColor()===st.turn?side+' (NPC thinking…)':humanColor()===st.turn?side+' (you)':side;
-    playStatus.textContent=who+' to move'+(isCheck(st,st.turn)?' — check!':'');
+    if(online){
+      const mine=st.turn===online.myColor;
+      playStatus.textContent=(mine?'YOUR TURN — you are '+side:side+' — your friend is thinking…')+(isCheck(st,st.turn)?' — check!':'');
+      playStatus.classList.toggle('yourturn',mine);
+    }else{
+      const who=botColor()===st.turn?side+' (NPC thinking…)':humanColor()===st.turn?side+' (you)':side;
+      playStatus.textContent=who+' to move'+(isCheck(st,st.turn)?' — check!':'');
+      playStatus.classList.remove('yourturn');
+    }
   }
   renderCaptured();renderMoves();
+  document.title=(online&&status==='playing'&&st.turn===online.myColor)?"♟ YOUR TURN — Beckett's Chess Academy":"Beckett's Chess Academy — Learn & Play";
 }
 function renderCaptured(){
   const counts={};
