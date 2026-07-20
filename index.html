@@ -212,6 +212,14 @@
           </select>
         </div>
         <div class="toggle-row">
+          <label for="diff-select">NPC level</label>
+          <select id="diff-select">
+            <option value="easy">Easy — just learning</option>
+            <option value="medium" selected>Medium — thinks a bit</option>
+            <option value="hard">Hard — plans ahead</option>
+          </select>
+        </div>
+        <div class="toggle-row">
           <input type="checkbox" id="coach-toggle" checked>
           <label for="coach-toggle">Coach hints (show legal moves &amp; tips)</label>
         </div>
@@ -472,9 +480,50 @@ function material(b,color){
   for(const p of b)if(p)sum+=(p[0]===color?1:-1)*VAL[p[1]];
   return sum;
 }
-function botChoose(st){
+function orderMoves(moves){
+  return moves.slice().sort((a,b)=>(b.captured?VAL[b.captured[1]]:0)-(a.captured?VAL[a.captured[1]]:0));
+}
+function botEasy(st,moves){
+  const caps=moves.filter(m=>m.captured);
+  const pool=(caps.length&&Math.random()<0.4)?caps:moves;
+  let mv=pool[Math.floor(Math.random()*pool.length)];
+  if(mv.promoNeeded)mv=Object.assign({},mv,{promo:'Q'});
+  return mv;
+}
+function searchScore(st,depth,alpha,beta,botC){
+  const moves=allLegal(st);
+  if(!moves.length){
+    if(isCheck(st,st.turn))return st.turn===botC?-1e5-depth:1e5+depth;
+    return 0;
+  }
+  if(depth===0)return material(st.board,botC);
+  const maximizing=st.turn===botC;
+  let best=maximizing?-Infinity:Infinity;
+  for(const raw of orderMoves(moves)){
+    const m=raw.promoNeeded?Object.assign({},raw,{promo:'Q'}):raw;
+    const sc=searchScore(applyMove(st,m),depth-1,alpha,beta,botC);
+    if(maximizing){if(sc>best)best=sc;if(sc>alpha)alpha=sc;}
+    else{if(sc<best)best=sc;if(sc<beta)beta=sc;}
+    if(beta<=alpha)break;
+  }
+  return best;
+}
+function botHard(st,moves){
+  let best=null,bestScore=-Infinity;
+  for(const raw of orderMoves(moves)){
+    const m=raw.promoNeeded?Object.assign({},raw,{promo:'Q'}):raw;
+    let sc=searchScore(applyMove(st,m),2,-Infinity,Infinity,st.turn);
+    const tf=m.to%8,tr=Math.floor(m.to/8);
+    sc+=(3.5-Math.abs(tf-3.5))*0.02+(3.5-Math.abs(tr-3.5))*0.02+Math.random()*0.05;
+    if(sc>bestScore){bestScore=sc;best=m;}
+  }
+  return best;
+}
+function botChoose(st,level){
   const moves=allLegal(st);
   if(!moves.length)return null;
+  if(level==='easy')return botEasy(st,moves);
+  if(level==='hard')return botHard(st,moves);
   let best=null,bestScore=-1e9;
   for(const mv of moves){
     const m=mv.promoNeeded?Object.assign({},mv,{promo:'Q'}):mv;
@@ -572,7 +621,7 @@ function scheduleBot(){
   setTimeout(()=>{
     game.busy=false;
     if(game.over||game.st.turn!==bc)return;
-    const bm=botChoose(game.st);
+    const bm=botChoose(game.st,document.getElementById('diff-select').value);
     if(bm)commitPlayMove(bm);
   },500);
 }
