@@ -231,8 +231,9 @@
           <label for="diff-select">NPC level</label>
           <select id="diff-select">
             <option value="easy">Easy — just learning</option>
-            <option value="medium" selected>Medium — thinks a bit</option>
-            <option value="hard">Hard — plans ahead</option>
+            <option value="medium" selected>Medium — thinks 1 move ahead</option>
+            <option value="hard">Hard — thinks 3 moves ahead</option>
+            <option value="expert">Expert — plans many moves ahead</option>
           </select>
         </div>
         <div class="toggle-row">
@@ -549,11 +550,54 @@ function botHard(st,moves){
   }
   return best;
 }
+function searchScoreT(st,depth,alpha,beta,botC,start,limit){
+  if(Date.now()-start>limit)return null; /* out of time */
+  const moves=allLegal(st);
+  if(!moves.length){
+    if(isCheck(st,st.turn))return st.turn===botC?-1e5-depth:1e5+depth;
+    return 0;
+  }
+  if(depth===0)return material(st.board,botC);
+  const maximizing=st.turn===botC;
+  let best=maximizing?-Infinity:Infinity;
+  for(const raw of orderMoves(moves)){
+    const m=raw.promoNeeded?Object.assign({},raw,{promo:'Q'}):raw;
+    const sc=searchScoreT(applyMove(st,m),depth-1,alpha,beta,botC,start,limit);
+    if(sc===null)return null;
+    if(maximizing){if(sc>best)best=sc;if(sc>alpha)alpha=sc;}
+    else{if(sc<best)best=sc;if(sc<beta)beta=sc;}
+    if(beta<=alpha)break;
+  }
+  return best;
+}
+function botExpert(st,moves){
+  /* iterative deepening with a ~1.2s time budget: searches as many
+     moves ahead as the clock allows (usually 4-5 plies) */
+  const start=Date.now(),LIMIT=1200;
+  let best=null;
+  for(let depth=2;depth<=5;depth++){
+    let curBest=null,curScore=-Infinity,ranOut=false;
+    for(const raw of orderMoves(moves)){
+      if(Date.now()-start>LIMIT){ranOut=true;break;}
+      const m=raw.promoNeeded?Object.assign({},raw,{promo:'Q'}):raw;
+      const sc=searchScoreT(applyMove(st,m),depth-1,-Infinity,Infinity,st.turn,start,LIMIT);
+      if(sc===null){ranOut=true;break;}
+      const tf=m.to%8,tr=Math.floor(m.to/8);
+      const bonus=(3.5-Math.abs(tf-3.5))*0.01+(3.5-Math.abs(tr-3.5))*0.01+Math.random()*0.02;
+      if(sc+bonus>curScore){curScore=sc+bonus;curBest=m;}
+    }
+    if(curBest&&!ranOut)best=curBest;      /* completed this depth */
+    else if(curBest&&!best)best=curBest;   /* partial but better than nothing */
+    if(ranOut)break;
+  }
+  return best||botHard(st,moves);
+}
 function botChoose(st,level){
   const moves=allLegal(st);
   if(!moves.length)return null;
   if(level==='easy')return botEasy(st,moves);
   if(level==='hard')return botHard(st,moves);
+  if(level==='expert')return botExpert(st,moves);
   let best=null,bestScore=-1e9;
   for(const mv of moves){
     const m=mv.promoNeeded?Object.assign({},mv,{promo:'Q'}):mv;
