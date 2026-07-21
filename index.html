@@ -86,6 +86,9 @@
   .sq.selected{box-shadow:inset 0 0 0 3px var(--sel)}
   .sq.lastmove::before{content:'';position:absolute;inset:0;background:rgba(245,208,102,.28)}
   .sq.checked::before{content:'';position:absolute;inset:0;background:radial-gradient(circle,rgba(220,60,40,.65),rgba(220,60,40,0) 70%)}
+  .sq.hintmove{box-shadow:inset 0 0 0 3px var(--good)}
+  .sq.hintmove::after{content:'';position:absolute;inset:0;background:rgba(127,176,105,.22);animation:hintpulse 1.2s infinite}
+  @keyframes hintpulse{0%,100%{opacity:.4}50%{opacity:1}}
   .sq .dot{position:absolute;width:26%;height:26%;border-radius:50%;background:rgba(30,60,35,.45);z-index:1;pointer-events:none}
   .sq.dark .dot{background:rgba(255,245,220,.4)}
   .sq .ring{position:absolute;inset:6%;border-radius:50%;border:3px solid rgba(30,60,35,.5);z-index:1;pointer-events:none}
@@ -240,10 +243,15 @@
           <input type="checkbox" id="coach-toggle" checked>
           <label for="coach-toggle">Coach hints (show legal moves &amp; tips)</label>
         </div>
+        <div class="toggle-row">
+          <input type="checkbox" id="analyze-toggle" checked>
+          <label for="analyze-toggle">Coach grades my moves (smart or not &amp; why)</label>
+        </div>
         <div class="btnrow">
           <button class="act primary" id="btn-new">New game</button>
           <button class="act" id="btn-undo">Undo</button>
           <button class="act" id="btn-flip">Flip board</button>
+          <button class="act" id="btn-coach">💡 Ask coach</button>
         </div>
       </div>
       <div class="panel">
@@ -648,6 +656,7 @@ function paintBoard(cells,st,opts){
     if(opts.showNames)html+='<span class="name-label">'+sqName(idx)+'</span>';
     if(opts.lastMove&&(opts.lastMove.from===idx||opts.lastMove.to===idx))d.classList.add('lastmove');
     if(opts.selected===idx)d.classList.add('selected');
+    if(opts.hint&&(opts.hint.from===idx||opts.hint.to===idx))d.classList.add('hintmove');
     if(opts.checkedSq===idx)d.classList.add('checked');
     if(opts.targets&&opts.targets.has(idx)){
       html+=st.board[idx]?'<span class="ring"></span>':'<span class="dot"></span>';
@@ -765,7 +774,7 @@ function renderPlay(){
   }
   let checkedSq=null;
   if(isCheck(st,st.turn))checkedSq=findKing(st.board,st.turn);
-  paintBoard(playCells,st,{flip:game.flip,selected:game.selected,targets,lastMove:game.lastMove,checkedSq});
+  paintBoard(playCells,st,{flip:game.flip,selected:game.selected,targets,lastMove:game.lastMove,checkedSq,hint:game.hint});
   const status=gameStatus(st);
   playStatus.classList.toggle('big',status!=='playing');
   if(status!=='playing')playStatus.classList.remove('yourturn');
@@ -859,6 +868,101 @@ function coachOnMove(prev,mv,nxt){
   }
   if(worst&&status==='playing')coachMsg('Careful — the '+NAME[worst.captured[1]]+' on '+sqName(worst.to)+' is undefended and can be taken.','warn');
 }
+/* ===== COACH ANALYSIS: grades moves and teaches thinking ahead ===== */
+const analyzeToggle=document.getElementById('analyze-toggle');
+function rootBest(st,limitMs){
+  const moves=allLegal(st);
+  if(!moves.length)return null;
+  const start=Date.now();
+  let best=null,bestScore=-Infinity;
+  for(const raw of orderMoves(moves)){
+    const m=raw.promoNeeded?Object.assign({},raw,{promo:'Q'}):raw;
+    let sc=searchScoreT(applyMove(st,m),2,-Infinity,Infinity,st.turn,start,limitMs);
+    if(sc===null)sc=material(applyMove(st,m).board,st.turn);
+    if(sc>bestScore){bestScore=sc;best=m;}
+  }
+  return {move:best,score:bestScore};
+}
+function biggestHang(st,moverColor){
+  /* after the mover's move: can the opponent grab something for cheap? */
+  let worst=null;
+  for(const r of allLegal(st)){
+    if(!r.captured)continue;
+    const capVal=VAL[r.captured[1]];
+    if(capVal<3)continue;
+    const defended=attacked(st.board,r.to,moverColor);
+    const attackerVal=VAL[r.piece[1]];
+    if(!defended||attackerVal<capVal){
+      if(!worst||capVal>VAL[worst.captured[1]])worst=r;
+    }
+  }
+  return worst;
+}
+function moveReasonFor(st,mv,nxt){
+  if(gameStatus(nxt)==='checkmate')return 'it is checkmate!';
+  if(mv.captured)return 'it wins the '+NAME[mv.captured[1]]+' on '+sqName(mv.to)+'.';
+  if(mv.castle)return 'castling tucks your king into safety.';
+  if(isCheck(nxt,nxt.turn))return 'it puts the enemy king in check.';
+  if([27,28,35,36].indexOf(mv.to)>=0)return 'it fights for the center, where pieces are strongest.';
+  const fromRank=Math.floor(mv.from/8);
+  if((mv.piece[1]==='N'||mv.piece[1]==='B')&&(fromRank===0||fromRank===7))return 'it develops a piece off the back row — exactly right in the opening.';
+  return 'looking several moves ahead, it keeps your position strongest.';
+}
+let analyzing=false;
+function maybeAnalyze(prev,mv,nxt){
+  if(!analyzeToggle.checked||analyzing)return;
+  const mover=mv.piece[0];
+  if(online){if(mover!==online.myColor)return;}
+  else if(botColor()){if(mover!==humanColor())return;}
+  if(gameStatus(nxt)!=='playing')return; /* game-over moves are celebrated elsewhere */
+  analyzing=true;
+  setTimeout(()=>{
+    try{
+      const bm=rootBest(prev,500);
+      let played=searchScoreT(nxt,2,-Infinity,Infinity,mover,Date.now(),350);
+      if(played===null)played=material(nxt.board,mover);
+      const bestScore=bm?bm.score:played;
+      const delta=bestScore-played;
+      const sameAsBest=bm&&bm.move&&bm.move.from===mv.from&&bm.move.to===mv.to;
+      let label,cls;
+      if(sameAsBest||delta<0.35){label='⭐ Best move!';cls='good';}
+      else if(delta<1){label='👍 Good move.';cls='good';}
+      else if(delta<3){label='🤔 Okay, but there was better.';cls='';}
+      else if(delta<5){label='⚠️ Careful — that\u2019s a mistake.';cls='warn';}
+      else{label='💥 Blunder!';cls='warn';}
+      const parts=[];
+      if(played<=-9000)parts.push('Danger: the coach sees a possible checkmate coming against you!');
+      const hang=biggestHang(nxt,mover);
+      if(hang&&delta>=1)parts.push('Why: your '+NAME[hang.captured[1]]+' on '+sqName(hang.to)+' can now be captured by their '+NAME[hang.piece[1]]+'.');
+      if(!sameAsBest&&bm&&bm.move&&delta>=1){
+        const sanB=toSAN(prev,bm.move,applyMove(prev,bm.move));
+        if(bm.score>=9000)parts.push('Better was '+sanB+' — it leads to checkmate!');
+        else if(bm.move.captured)parts.push('Better was '+sanB+' — it wins the '+NAME[bm.move.captured[1]]+'.');
+        else parts.push('The coach liked '+sanB+' more.');
+      }
+      if((sameAsBest||delta<1))parts.push('Why it works: '+moveReasonFor(prev,mv,nxt));
+      const reply=rootBest(nxt,300);
+      if(reply&&reply.move)parts.push('Think ahead — expect the reply: '+toSAN(nxt,reply.move,applyMove(nxt,reply.move)));
+      const prefix=(!botColor()&&!online)?(mover==='w'?'White: ':'Black: '):'';
+      window.__lastAnalysis={label,delta,parts};
+      coachMsg('<strong>'+prefix+label+'</strong><br>'+parts.join('<br>'),cls);
+    }catch(e){}
+    analyzing=false;
+  },60);
+}
+document.getElementById('btn-coach').addEventListener('click',()=>{
+  if(game.over||game.busy||promoVeil.classList.contains('open'))return;
+  if(botColor()===game.st.turn)return;
+  if(online&&game.st.turn!==online.myColor){coachMsg('It\u2019s your friend\u2019s turn — ask again on yours!');return;}
+  const bm=rootBest(game.st,900);
+  if(!bm||!bm.move)return;
+  game.hint={from:bm.move.from,to:bm.move.to};
+  game.selected=null;
+  renderPlay();
+  const nxt=applyMove(game.st,bm.move);
+  coachMsg('💡 <strong>Coach suggests: '+toSAN(game.st,bm.move,nxt)+'</strong> (glowing squares) — '+moveReasonFor(game.st,bm.move,nxt),'good');
+});
+
 async function commitPlayMove(mv){
   if(mv.promoNeeded&&!mv.promo){
     if(botColor()===mv.piece[0]){mv=Object.assign({},mv,{promo:'Q'});}
@@ -874,13 +978,15 @@ async function commitPlayMove(mv){
   const nxt=applyMove(prev,mv);
   game.history.push({st:prev,san:null,lastMove:game.lastMove});
   game.sans.push(toSAN(prev,mv,nxt));
-  game.st=nxt;game.lastMove=mv;game.selected=null;
+  game.st=nxt;game.lastMove=mv;game.selected=null;game.hint=null;
   renderPlay();
   coachOnMove(prev,mv,nxt);
+  maybeAnalyze(prev,mv,nxt);
   if(!game.over)scheduleBot();
 }
 function onPlayClick(idx){
   if(game.over||game.busy||promoVeil.classList.contains('open'))return;
+  game.hint=null;
   if(botColor()===game.st.turn)return;
   if(online&&game.st.turn!==online.myColor)return;
   const st=game.st;
