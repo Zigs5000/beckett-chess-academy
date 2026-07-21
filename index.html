@@ -35,7 +35,7 @@
     min-height:100vh;
     padding:18px 14px 130px;
   }
-  .wrap{max-width:1060px;margin:0 auto}
+  .wrap{max-width:1360px;margin:0 auto}
   header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px}
   h1{font-size:clamp(1.5rem,3.5vw,2.1rem);font-weight:normal;letter-spacing:.5px}
   h1 .pc{color:var(--brass)}
@@ -51,7 +51,7 @@
   .tab.active{color:#1c1409;background:var(--brass);border-color:var(--brass);font-weight:bold}
   .tab:focus-visible,button:focus-visible{outline:2px solid var(--sel);outline-offset:2px}
 
-  .layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
   @media (max-width:900px){.layout{grid-template-columns:1fr}}
 
   /* board */
@@ -59,7 +59,7 @@
     background:linear-gradient(160deg,#3a2a19,#241a0e);
     border:1px solid #5a4326;border-radius:14px;
     padding:14px;box-shadow:0 18px 40px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06);
-    width:min(100%,560px);margin:0 auto;
+    width:min(100%,72vh,760px);margin:0 auto;
   }
   .board{
     display:grid;grid-template-columns:repeat(8,1fr);
@@ -77,7 +77,7 @@
   .sq.dark .coord{color:var(--light-sq)}
   .sq .name-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:clamp(.6rem,1.8vw,.85rem);opacity:.5;pointer-events:none;font-family:Verdana,sans-serif}
   .sq .piece{
-    font-size:clamp(1.4rem,6.2vw,3rem);line-height:1;pointer-events:none;z-index:2;
+    font-size:clamp(1.4rem,6.2vw,4rem);line-height:1;pointer-events:none;z-index:2;
     transition:transform .08s;
     font-family:'Segoe UI Symbol','Noto Sans Symbols 2','DejaVu Sans',Georgia,serif;
   }
